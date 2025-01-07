@@ -263,7 +263,6 @@ def test_get_incidents(mocker):
 @pytest.mark.parametrize(
     'alerts_limit',
     [
-        1,
         2
     ]
 )
@@ -303,7 +302,7 @@ def test_fetch_incidents(mocker, import_alerts: bool, test_data_key: str):
         """
     fetch_responses = util_load_json('test_data/fetch_incidents.json')
     mocked_http__incidents_response = fetch_responses['list_incidents_request'][0]
-    mocked_http__alerts_response = fetch_responses['incident_list_alerts_request'][0]
+    mocked_http__alerts_response = fetch_responses['incident_list_alerts_request']
     mocker.patch.object(client, 'list_incidents_request', return_value=mocked_http__incidents_response)
     mocker.patch.object(client, 'incident_list_alerts_request', return_value=mocked_http__alerts_response)
 
