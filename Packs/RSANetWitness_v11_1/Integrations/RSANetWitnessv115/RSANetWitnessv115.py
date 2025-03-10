@@ -1,7 +1,7 @@
 import demistomock as demisto  # noqa: F401
 from CommonServerPython import *  # noqa: F401
 from requests import HTTPError
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta
 
 
 ERROR_TITLES = {
@@ -67,7 +67,18 @@ class Client(BaseClient):
         return self._http_request('GET', 'rest/api/incidents', params=params)
 
     def get_incident_request(self, inc_id: str | None) -> dict:
-        return self._http_request('GET', f'rest/api/incidents/{inc_id}')
+        data = json.dumps({
+            'meta_name': 'incidentId',
+            'meta_value': inc_id,
+            'numberOfRecords': "1",
+        })
+        response = self._http_request('GET', 'rest/api/incidents/fetch', data=data)
+
+        # Ensure the response is a list
+        if not isinstance(response, list):
+            raise ValueError("Expected the response to be a list")
+
+        return response[0]
 
     def update_incident_request(self, id_: Any | None, status: Any | None, assignee: Any | None) -> dict:
         data = assign_params(status=status, assignee=assignee)
@@ -89,11 +100,24 @@ class Client(BaseClient):
             return_empty_response=True,
         )
 
-    def incident_list_alerts_request(self, page_size: str | None, page_number: str | None, id_: str | None) -> dict:
-        params = assign_params(pageNumber=page_number, pageSize=page_size)
-        return self._http_request(
-            'GET', f'rest/api/incidents/{id_}/alerts', params=params
+    def incident_list_alerts_request(self, page_size: str | None, page_number: str | None, id_: str | None) -> list:
+        # params = assign_params(pageNumber=page_number, pageSize=page_size)
+        data = json.dumps({
+            'meta_name': 'incidentId',
+            'meta_value': id_,
+            'numberOfRecords': page_size,
+            'includeFields': "null"
+        })
+
+        response = self._http_request(
+            'GET', 'rest/api/alert/fetch', data=data
         )
+
+        # Ensure the response is a list
+        if not isinstance(response, list):
+            raise ValueError("Expected the response to be a list")
+
+        return response
 
     def services_list_request(self, name: Any | None) -> dict:
         params = assign_params(name=name)
@@ -822,34 +846,26 @@ def fetch_alerts_related_incident(client: Client, incident_id: str, max_alerts: 
     """
     Returns the alerts that are associated with the given incident.
     """
-    alerts: list[dict] = []
-    has_next = True
-    page_number = 0
-    while has_next and len(alerts) < max_alerts:
-        demisto.debug(f"fetching alerts, {page_number=}")
-        try:
-            response_body = client.incident_list_alerts_request(
-                page_number=str(page_number),
-                id_=incident_id,
-                page_size=None
-            )
-        except HTTPError as e:
-            if e.response is not None and e.response.status_code == 429:
-                raise DemistoException(
-                    'Too many requests, try later or reduce the number of Fetch Limit parameter.'
-                ) from e
-            raise e
 
-        except Exception:
-            demisto.error(f"Error occurred while fetching alerts related to {incident_id=}. {page_number=}")
-            raise
+    try:
+        response_body = client.incident_list_alerts_request(
+            page_number=None,
+            id_=incident_id,
+            page_size=str(max_alerts),
 
-        items = response_body.get('items', [])
-        alerts.extend(items[:max_alerts - len(alerts)])
-        page_number += 1
-        has_next = response_body.get('hasNext', False)
+        )
+    except HTTPError as e:
+        if e.response is not None and e.response.status_code == 429:
+            raise DemistoException(
+                'Too many requests, try later or reduce the number of Fetch Limit parameter.'
+            ) from e
+        raise e
 
-    return alerts
+    except Exception:
+        demisto.error(f"Error occurred while fetching alerts related to {incident_id=}.")
+        raise
+
+    return response_body
 
 
 def fetch_incidents(client: Client, params: dict) -> list:
@@ -1381,13 +1397,13 @@ def clean_old_inc_context(max_time_mirror_inc: int):
     int_cont = demisto.getIntegrationContext()
     inc_data = int_cont.get("IncidentsDataCount", {})
     current_time = datetime.now()
-    current_time = current_time.replace(tzinfo=UTC)
+    current_time = current_time.replace(tzinfo=timezone.utc)
     total_know = 0
     res = {}
     for inc_id, inc in inc_data.items():
         inc_created = arg_to_datetime(inc["Created"])
         if inc_created:
-            inc_created = inc_created.replace(tzinfo=UTC)
+            inc_created = inc_created.replace(tzinfo=timezone.utc)
             diff = current_time - inc_created
             if diff.days <= max_time_mirror_inc:  # maximum RSA aggregation time 24 days
                 res[inc_id] = inc

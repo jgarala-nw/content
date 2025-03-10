@@ -102,8 +102,7 @@
         }
     ],
     "incident_list_alerts_request": [
-        {
-            "items": [
+        
                 {
                     "id": "1111",
                     "title": "test ",
@@ -150,13 +149,6 @@
                         }
                     ]
                 }
-            ],
-            "pageNumber": 0,
-            "pageSize": 100,
-            "totalPages": 1,
-            "totalItems": 1,
-            "hasNext": false,
-            "hasPrevious": false
-        }
+            
     ]
 }
